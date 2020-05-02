@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>vue测试</title>
+  <script src="https://cdn.bootcdn.net/ajax/libs/vue/2.6.11/vue.js"></script>
+  <link href="https://cdn.bootcdn.net/ajax/libs/normalize/8.0.1/normalize.min.css" rel="stylesheet">
+  <!-- 引入样式 -->
+  <link href="https://cdn.bootcdn.net/ajax/libs/element-ui/2.13.1/theme-chalk/index.css" rel="stylesheet">
+  <!-- 引入组件库 -->
+  <script src="https://cdn.bootcdn.net/ajax/libs/element-ui/2.13.1/index.js"></script>
+
+  <!-- 二维码canvas -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcanvas@3"></script>
+
+</head>
+<body>
+  <script>
+    const getComponents = (name) => {
+      return document.getElementById(name).innerHTML
+    }
+  </script>
+  <style>
+    html{
+      background: #f2f2f2;
+    }
+    .poster-controller{
+      display: flex;
+      margin-left: 50px;
+      display: flex;
+      
+    }
+    /* 存在但超出的元素 */
+    .out-el{
+      position: fixed;
+      left: 9999px;
+    }
+    .poster-container{
+      /* background-size: 100%; */
+      background-repeat: no-repeat;
+      /* background-position: top center; */
+      background-size: contain;
+      position: relative;
+    }
+    .avatar-uploader-icon{
+      border: 1px solid #aaa;
+      margin-bottom: 20px;
+      height: 100px;
+      width: 100px;
+      display: flex;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 30px;
+      align-items: center;
+    }
+    .upload-poster{
+      font-size: 16px;
+      font-weight: normal;
+      border-radius: 10px;cursor: pointer;box-shadow:0 0 10px rgba(0, 0, 0, .2);padding: 5px 10px;
+    }
+  </style>
+
+
+  <div id='app'>
+    <img
+    :src="posterSrc"
+    @load="posterLoaded"
+    class="out-el"/>
+    <canvas
+    :width='posterRealSize.width'
+    :height='posterRealSize.height'
+    class="out-el" ref="canvas"></canvas>
+
+    <h3 style="margin-left: 50px;">
+      活动编辑
+    </h3>
+    <el-form
+    label-width="100px"
+    style="padding: 20px 20px 0 20px;max-width: 300px;">
+      <el-form-item label="活动名">
+        <el-input type="text" v-model="form.name" autocomplete="off"></el-input>
+      </el-form-item>
+
+      <el-form-item label="固定二维码">
+        <el-switch
+        v-model="form.isCustomQr">
+        </el-switch>
+        <span style="font-size: 12px;color: #999; white-space: nowrap;">（固定二维码：不存在分享关系的，如公众号二维码和客服微信二维码，反之则否）</span>
+      </el-form-item>
+      
+      <el-form-item
+      v-if="!form.isCustomQr"
+      label="活动连接">
+        <el-input type="text" v-model="form.url" autocomplete="off"></el-input>
+      </el-form-item>
+      <!-- action="https://jsonplaceholder.typicode.com/posts/" -->
+      <el-form-item
+      v-else
+      >
+        <el-upload
+        class="avatar-uploader"
+        action=""
+        :show-file-list="false"
+        :on-success="handleAvatarSuccess"
+        :before-upload="beforeAvatarUpload">
+          <img v-if="form.config.qrUrl" :src="form.config.qrUrl" class="avatar">
+          <i v-else class="el-icon-plus avatar-uploader-icon"></i>
+        </el-upload>
+      </el-form-item>
+    </el-form>
+
+    <!-- <div>
+      x:<el-input type="text" v-model="currentDragScaleComponent.x" autocomplete="off"></el-input>
+      y:<el-input type="text" v-model="currentDragScaleComponent.y" autocomplete="off"></el-input>
+      a:<el-input type="text" v-model="currentDragScaleComponent.a" autocomplete="off"></el-input>
+      fontSize:<el-input type="text" v-model="currentDragScaleComponent.size" autocomplete="off"></el-input>
+    </div> -->
+    <el-image
+    ref='resultImage'
+    style="width: 0; height: 0;"
+    :src="srcList[0]" 
+    :preview-src-list="srcList">
+    </el-image>
+    <h3 style="margin-left: 50px;">
+      海报编辑
+      <el-button type="primary" @click="handleShowTheResult">效果浏览</el-button>
+    </h3>
+    <el-form
+    label-width="100px"
+    >
+      <el-form-item
+      label="元素">
+        <div
+        style="display: inline-block;margin-right: 20px;"
+        v-for="(item, index) in dragDefaultList"
+        :key='index'>
+          {{item.title}}
+          <el-switch
+          :value="index in dragList"
+          @change="handleElementChange($event, index)">
+          </el-switch>
+        </div>
+
+        <label class="upload-poster" style="margin-right: 20px;">
+          海报上传
+          <input
+          @change="handlePosterChange"
+          style="display: none;"
+          type="file" />
+        </label>
+        
+      </el-form-item>
+    </el-form>
+    <div class="poster-controller">
+      <div
+      :style="{
+        backgroundImage: 'url(' + posterSrc + ')',
+        height: posterShowSize.height + 'px',
+        width: posterShowSize.width + 'px',
+        minWidth: posterShowSize.width + 'px',
+      }"
+      class="poster-container">
+        <!-- <drag-scale-component
+        :x="currentDragScaleComponent.x"
+        :y="currentDragScaleComponent.y"
+        :a="currentDragScaleComponent.a"
+        :size="currentDragScaleComponent.size"
+        @change="dragScaleChange"
+        ></drag-scale-component> -->
+        
+        <div
+        v-for="(item, index) in dragList"
+        :key="index"
+        >
+          <drag-scale-component
+          :prop="index"
+          :url="item.url"
+          :type="item.type"
+          :active="item.prop == currentDragScaleComponentProp"
+
+          :x="item.x"
+          :y="item.y"
+          :a="item.a"
+          :size="item.size"
+          :title="item.title"
+          :border-radius="item.borderRadius"
+
+          @delete="handleDelete"
+          @change="handleChange"
+          @confirm="handleConfirm"
+          ></drag-scale-component>
+        </div>
+        
+        
+      </div>
+
+      <el-form
+      v-if="currentDragScaleComponentProp && dragList[currentDragScaleComponentProp]"
+      label-width="100px"
+      style="max-width: 200px;">
+        <el-form-item
+        v-if='dragList[currentDragScaleComponentProp].title'
+        :label="dragList[currentDragScaleComponentProp].title">
+        </el-form-item>
+        <el-form-item
+        label="x">
+          <el-input type="number" v-model="dragList[currentDragScaleComponentProp].x" autocomplete="off"></el-input>
+        </el-form-item>
+        <el-form-item
+        label="y">
+          <el-input type="number" v-model="dragList[currentDragScaleComponentProp].y" autocomplete="off"></el-input>
+        </el-form-item>
+        <el-form-item
+        label="边长">
+          <el-input type="number" v-model="dragList[currentDragScaleComponentProp].a" autocomplete="off"></el-input>
+        </el-form-item>
+        <el-form-item
+        label="字体大小">
+          <el-input type="number" v-model="dragList[currentDragScaleComponentProp].size" autocomplete="off"></el-input>
+        </el-form-item>
+        <el-form-item
+        label="圆角">
+          <el-switch
+          :value="dragList[currentDragScaleComponentProp].borderRadius"
+          @change="handleBorderRadiusChange"></el-switch>
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <div style="height: 100px;"></div>
+    
+    
+  </div>
+
+
+  <style>
+    .drag-scale-component *{
+      user-select: none;
+    }
+    .drag-scale-component{
+      position: absolute;
+      cursor: move;
+      user-select: none;
+      /* border: 2px solid blue; */
+    }
+    .drag-scale-component-body{
+      /* padding: 20px; */
+      background-color: #fff;
+      overflow: hidden;
+    }
+    .drag-scale-component-body img{
+      width: 100%;
+      height: 100%;
+    }
+    .drag-scale-component_active::after{
+      content: "";
+      display: block;
+      position: absolute;
+      top: 0;
+      right: 2px;
+      left: 0;
+      bottom: 0;
+      width: 100%;
+      border: 2px solid blue;
+    }
+    .drag-scale-component-resize{
+      width: 8px;
+      height: 8px;
+      right: 0;
+      bottom: 0;
+      cursor: nwse-resize;
+      transform: translate(75%, 50%);
+      position: absolute;
+      background-color: blue;
+    }
+    .right-menu {
+      position: fixed;
+      z-index: 99;
+      width: 100px;
+      display: none;
+      box-shadow: 0 0 10px rgba(0, 0, 0, .1);
+    }
+    .right-menu_active{
+      display: block;
+    }
+    .right-menu-item{
+      cursor: pointer;
+      padding: 10px;
+      background-color: #fff;
+      border-bottom: 1px solid #eee;
+      position: relative;
+    }
+    .right-menu-item.tick::before{
+      position: absolute;
+      right: 10px;
+      content: "√";
+      display: block;
+    }
+  </style>
+  <template id='DragScaleComponent'>
+    <div
+    @contextmenu.stop.prevent="toggleEightMenu"
+    ref="body"
+    class="drag-scale-component"
+    :class="[active ? 'drag-scale-component_active' : '']"
+    @mousedown='mousedown'
+    @click.stop='bindconfirm()'
+    :style="{
+      transform: 'translate(' + innerX + 'px,' + innerY + 'px)'
+    }"
+    >
+      <div
+      v-if="type == 'text'"
+      class="drag-scale-component-body"
+      :style="{
+        fontSize: innerSize + 'px'
+        }"
+      >
+        123
+      </div>
+      <div
+      v-else
+      class="drag-scale-component-body"
+      :style="{
+        borderRadius: innderBorderRadius ? '100%' : '',
+        width: innerA + 'px',
+        height: innerA + 'px'
+      }"
+      >
+        <img
+        v-if="type === 'image'" :src="url" alt="">
+      </div>
+      <div
+      v-if="active"
+      @mousedown='mousedownScale'
+      class="drag-scale-component-resize"></div>
+
+
+      <div
+      :style="{
+        left: rightMenuPosition.x + 'px',
+        top: rightMenuPosition.y + 'px'
+      }"
+      class="right-menu"
+      @mousedown.stop
+      :class="[rightMenuShow ? 'right-menu_active' : '']">
+          <!-- 分别传递事件给父元素调用 -->
+          <div
+          :class="{'tick': innderBorderRadius}"
+          class="right-menu-item" @click="innderBorderRadius = !innderBorderRadius;bindconfirm()">圆角</div>
+          <div
+          :class="{'tick': horizontalCenter}"
+          v-if="type=== 'text'"
+          class="right-menu-item" @click="horizontalCenter = !horizontalCenter;bindconfirm()">居中</div>
+          <div class="right-menu-item" @click="binddelete">删除</div>
+      </div>
+    </div>
+  </template>
+  <script>
+    const DragScaleComponent = {
+      template: getComponents('DragScaleComponent'),
+      props: ['x', 'y', 'a', 'size', 'type', 'prop',/*名称*/'url', 'active', 'title', 'borderRadius'],
+      watch: {
+        x(val) {
+          if (this.active && val) {
+            this.innerX = val
+          }
+        },
+        y(val) {
+          if (this.active && val) {
+            this.innerY = val
+          }
+        },
+        a(val) {
+          if (this.active && val) {
+            this.innerA = val
+          }
+        },
+        size(val) {
+          if (this.active && val) {
+            this.innerSize = val
+          }
+        },
+        borderRadius(val) {
+          if (this.active) {
+            this.innderBorderRadius = val
+          }
+        }
+      },
+      data () {
+        return {
+          isOn: false,
+          innerX: 0,
+          innerY: 0,
+          // 边长
+          innerA: 100,
+          // 字体大小
+          innerSize: 16,
+          innderBorderRadius: false,
+          horizontalCenter: false,
+          current: {
+            x: 0,
+            y: 0
+          },
+          center: {
+            x: 0,
+            y: 0
+          },
+          isOnScale: false,
+          currentScale: {
+            x: 0,
+            y: 0,
+          },
+          // 右键
+          rightMenuPosition: {
+            x: 0,
+            y: 0
+          },
+          rightMenuShow: false
+        }
+      },
+      mounted () {
+      },
+      destroyed() {
+        document.removeEventListener('click', this.hideRightMenu)
+      },
+      methods: {
+        // 隐藏右键菜单
+        hideRightMenu (e) {
+          this.rightMenuShow = false
+        },
+        // 显示右键菜单
+        toggleEightMenu (e) {
+          // console.log(e)
+          this.rightMenuPosition = {
+            x: e.offsetX,
+            y: e.offsetY
+          }
+          this.rightMenuShow = true
+          document.addEventListener('click', this.hideRightMenu)
+        },
+        binddelete() {
+          this.$emit('delete', {
+            prop: this.prop || 'qr'
+          })
+        },
+        bindconfirm () {
+          let {innerX, innerY, innerA, innerSize} = this
+          this.$emit('confirm', {
+            x: innerX,
+            y: innerY,
+            a: innerA,
+            size: innerSize,
+            title: this.title,
+            prop: this.prop || 'qr'
+          })
+        },
+        bindchange () {
+          let {innerX, innerY, innerA, innerSize} = this
+          this.$emit('change', {
+            x: innerX,
+            y: innerY,
+            a: innerA,
+            size: innerSize,
+            prop: this.prop || 'qr'
+          })
+        },
+        changeTextScale (e) {
+          this.isOnScale = true
+          this.currentScale = {
+            x: e.layerX,
+            y: e.layerY
+          }
+          document.onmousemove = (e) => {
+            if (this.isOnScale) {
+              this.innerSize = e.layerX - this.currentScale.x
+              this.bindchange()
+            }
+          }
+          document.onmouseup = (e) => {
+            this.bindconfirm()
+            this.isOnScale = false
+            document.onmousemove = null
+            document.onmouseup = null
+          }
+        },
+        changeImageScale (e) {
+          this.isOnScale = true
+          this.currentScale = {
+            x: e.layerX,
+            y: e.layerY
+          }
+          document.onmousemove = (e) => {
+            if (this.isOnScale) {
+              let a1 = 0
+              let a2 = 0
+              a1 = e.layerX - this.currentScale.x
+              a2 = e.layerY - this.currentScale.y
+              if (a1 < 20 && a2 < 20 || (a1 > 600 || a2 > 600)) {
+                // this.innerA = 20
+              } else {
+                this.innerA = a1 > a2 ? a1 : a2
+              }
+              this.bindchange()
+            }
+          }
+          document.onmouseup = (e) => {
+            this.bindconfirm()
+            this.isOnScale = false
+            document.onmousemove = null
+            document.onmouseup = null
+          }
+        },
+        // 缩放
+        mousedownScale(e) {
+          if (this.type == 'text') {
+            this.changeTextScale(e)
+          } else {
+            this.changeImageScale(e)
+          }
+        },
+        mousedown (e) {
+          this.rightMenuShow = false
+          this.bindconfirm()
+          if (this.isOnScale) {
+            return false
+          }
+          this.center = {
+            x: this.$refs.body.offsetWidth / 2,
+            y: this.$refs.body.offsetHeight / 2
+          }
+          this.isOn = true
+          this.current = {
+            x: e.layerX,
+            y: e.layerY
+          }
+          document.onmousemove = (e) => {
+            if (this.isOn) {
+              // console.log('整个')
+              // console.log(e)
+              // // 内部offset
+              // console.log('内部offset')
+              // console.log(e.offsetX, e.offsetY)
+              // // 外部layer
+              // console.log('外部layer')
+              // console.log(e.layerX, e.layerY)
+              this.innerX = e.layerX - this.center.x
+              this.innerY = e.layerY - this.center.y
+              let {innerX, innerY, innerA, innerSize} = this
+              this.$emit('change', {
+                x: innerX,
+                y: innerY,
+                a: innerA,
+                size: innerSize
+              })
+            }
+          }
+          document.onmouseup = (e) => {
+            this.isOn = false
+            document.onmousemove = null
+            document.onmouseup = null
+          }
+        }
+      }
+    }
+  </script>
+  
+  <script>
+    
+    const limitSize = {
+      width: 300
+    }
+    const config = [
+      {
+        type: 'poster',
+        url: '',
+        style: {
+          width: 0,
+          height: 0,
+          top: 0,
+          left: 0,
+          borderRadius: false
+        }
+      },
+      {
+        type: 'image',
+        url: '__AVATAR__',
+        style: {
+          width: 0,
+          height: 0,
+          top: 0,
+          left: 0,
+          borderRadius: false
+        }
+      },
+      {
+        type: 'image',
+        url: '__QR__',
+        style: {
+          width: 0,
+          height: 0,
+          top: 0,
+          left: 0,
+          borderRadius: false
+        }
+      }
+    ]
+
+
+    
+    
+    Vue.prototype.$log = console.log
+    var app = new Vue({
+      el: '#app',
+      components: {
+        'drag-scale-component': DragScaleComponent
+      },
+      data: {
+        srcList: [
+          'https://fuss10.elemecdn.com/8/27/f01c15bb73e1ef3793e64e6b7bbccjpeg.jpeg',
+          'https://fuss10.elemecdn.com/1/8e/aeffeb4de74e2fde4bd74fc7b4486jpeg.jpeg'
+        ],
+        ctx: null,
+        posterImageObj: null,
+
+        form: {
+          title: '',
+          name: '',
+
+          // 固定二维码？
+          isCustomQr: false,
+
+          config: {}
+        },
+        posterSrc: './img/poster.jpg',
+
+        // 多个drag
+        dragList: {
+          // qr: {
+          //   title: '二维码',
+          //   type: 'image',
+          //   url: './img/qr.jpg'
+          // },
+          // avatar: {
+          //   title: '头像',
+          //   type: 'image',
+          //   url: './img/avatar.jpg'
+          // }
+        },
+        dragDefaultList: {
+          qr: {
+            prop: 'qr',
+            title: '二维码',
+            type: 'image',
+            url: './img/qr.png'
+          },
+          avatar: {
+            prop: 'avatar',
+            title: '头像',
+            type: 'image',
+            url: './img/avatar.jpg'
+          }
+        },
+
+        posterShowSize: {
+          width: 400,
+          height: 800
+        },
+        posterRealSize: {
+          width: 0,
+          height: 0
+        },
+        scaleSize: 0,
+        // 当前组件
+        currentDragScaleComponentProp: ''
+      },
+      methods: {
+        loadImage(src) {
+          let _src = ''
+          if (typeof src == 'object') {
+            _src = src.url || src.src
+          } else {
+            _src = src
+          }
+          let img = new Image()
+          img.src = _src
+          return new Promise((resolve, reject) => {
+            img.onload = () => {
+              resolve(img)
+            }
+            img.onerror = (e) => {
+              this.$message.error('加载图片异常，请查看console')
+              console.log('***************加载图片异常' + _src + '***********')
+              console.error(e)
+            }
+          })
+        },
+        handleShowTheResult() {
+          this.ctx.drawImage(this.posterImageObj, 0, 0, this.posterImageObj.width, this.posterImageObj.height)
+          this.srcList[0] = this.$refs.canvas.toDataURL()
+          this.$refs.resultImage.showViewer = true
+        },
+        handlePosterChange (e) {
+          // console.log(e.target.files)
+          let file = e.target.files[0]
+          var reader = new FileReader()
+          reader.readAsDataURL(file)
+          reader.onload = (e) => {
+            // console.log(e)
+            this.posterSrc = e.target.result
+          }
+        },
+        handleBorderRadiusChange (e) {
+          this.$set(this.dragList[this.currentDragScaleComponentProp], 'borderRadius', e)
+        },
+        handleElementChange (e, prop) {
+          if (e == true) {
+            this.$set(this.dragList, prop, this.dragDefaultList[prop])
+            // this.dragList[prop] = this.dragDefaultList[prop]
+          } else {
+            this.$delete(this.dragList, prop)
+          }
+        },
+        handleDelete (e) {
+          this.currentDragScaleComponentProp = ''
+          this.$delete(this.dragList, e.prop)
+        },
+        // handleChoose (e) {
+        //   for(let i in this.dragList) {
+        //     this.dragList[i].active = false
+        //   }
+        //   if (this.dragList[e.prop]) {
+        //     this.dragList[e.prop].active = true
+        //     this.currentDragScaleComponent = e
+        //   }
+        //   console.log(e)
+        // },
+        handleChange (e) {
+          if (e.prop) {
+            this.dragList[e.prop] = {
+              ...this.dragList[e.prop],
+              ...e
+            }
+          }
+          
+        },
+        handleConfirm (e) {
+          if (e.prop) {
+            this.currentDragScaleComponentProp = e.prop
+            this.dragList[e.prop] = {
+              ...this.dragList[e.prop],
+              ...e
+            }
+          }
+        },
+        dragScaleChange(e) {
+          this.currentDragScaleComponentProp = e.prop
+        },
+        log(e) {
+          console.log(e)
+        },
+        beforeAvatarUpload (e) {
+          console.log(e)
+        },
+        handleAvatarSuccess (e) {
+          console.log(e)
+        },
+        posterLoaded ({currentTarget}) {
+          this.posterImageObj = currentTarget
+          let {width, height} = currentTarget
+          this.posterRealSize = { width, height}
+          this.posterShowSize.height = this.posterShowSize.width / width * height
+        },
+        // 单机的时候清除的东西
+        clickClearFunc () {
+          this.currentDragScaleComponentProp = ''
+        },
+      },
+      
+      mounted() {
+        this.ctx = this.$refs.canvas.getContext('2d')
+      },
+      destroyed () {
+      }
+    })
+  </script>
+</body>
+</html>
